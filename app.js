@@ -217,70 +217,208 @@ function solveByLastMissing(puzzle){
   }
   return {complete:board.every(Boolean),firstMoves:first.size,steps,solution:board};
 }
+const GAME_STORAGE_KEY='sudoku-4xa4-play-v1';
+function setPlayerEntry(board,index,value){
+  if(!Number.isInteger(index)||index<0||index>=81||!Number.isInteger(value)||value<0||value>9||board.puzzle[index])return false;
+  if(!board.entries)board.entries=Array(81).fill(0);
+  if(board.entries[index]===value)return false;
+  board.entries[index]=value;return true;
+}
+function entryConflicts(board){
+  const values=board.puzzle.map((v,i)=>v||board.entries?.[i]||0),conflicts=new Set();
+  for(const unit of UNITS){
+    const positions=new Map();
+    for(const i of unit){const digit=values[i];if(!digit)continue;if(!positions.has(digit))positions.set(digit,[]);positions.get(digit).push(i);}
+    for(const group of positions.values())if(group.length>1)group.forEach(i=>conflicts.add(i));
+  }
+  return conflicts;
+}
+function checkPlayerBoard(board){
+  const errors=[],empty=[];
+  for(let i=0;i<81;i++){
+    if(board.puzzle[i])continue;
+    const value=board.entries?.[i]||0;
+    if(!value)empty.push(i);else if(value!==board.solution[i])errors.push(i);
+  }
+  return {errors,empty,complete:!errors.length&&!empty.length};
+}
+function restoreGame(raw){
+  try{
+    if(typeof raw!=='string'||raw.length>20000)return null;
+    const data=JSON.parse(raw);
+    if(data.version!==1||!Object.hasOwn(LABELS,data.level)||!Array.isArray(data.boards)||data.boards.length!==4)return null;
+    const validDigits=a=>Array.isArray(a)&&a.length===81&&a.every(v=>Number.isInteger(v)&&v>=0&&v<=9);
+    const boards=data.boards.map(board=>{
+      if(!validDigits(board.puzzle)||!validDigits(board.solution)||!validDigits(board.entries)||board.level!==data.level)throw Error('Invalid game');
+      const solved=countSolutions(board.puzzle,2);
+      if(solved.count!==1||board.solution.some((v,i)=>!v||v!==solved.solution[i]))throw Error('Invalid solution');
+      return {puzzle:board.puzzle.slice(),solution:board.solution.slice(),entries:board.entries.map((v,i)=>board.puzzle[i]?0:v),level:data.level,clues:board.puzzle.filter(Boolean).length};
+    });
+    return {level:data.level,boards};
+  }catch{return null;}
+}
 function renderBoard(board,solved=false){
   const root=document.createElement('div');root.className='sudoku-grid';root.setAttribute('role','img');
   root.setAttribute('aria-label',solved?'Rozwiązane sudoku 9 na 9':'Sudoku 9 na 9');
   for(let i=0;i<81;i++){
     const cell=document.createElement('div');const r=Math.floor(i/9),c=i%9;
     cell.className='sudoku-cell';if(c===2||c===5)cell.classList.add('box-right');if(r===2||r===5)cell.classList.add('box-bottom');
-    const v=solved?board.solution[i]:board.puzzle[i];
+    const v=solved?board.solution[i]:board.puzzle[i]||board.entries?.[i]||0;
     if(v)cell.textContent=String(v);
+    if(!solved&&!board.puzzle[i]&&v)cell.classList.add('user-digit');
     if(solved&&!board.puzzle[i])cell.classList.add('new-digit');
     root.appendChild(cell);
   }
   return root;
 }
-function renderTile(board,index,solved=false){
+function renderTile(board,index,solved=false,onPlay){
   const tile=document.createElement('section');tile.className='puzzle-tile';
   const head=document.createElement('div');head.className='tile-heading';
   const h=document.createElement('strong');h.textContent=`Sudoku ${String(index+1).padStart(2,'0')}`;
-  const sub=document.createElement('span');sub.textContent=`${board.clues} cyfr · ${81-board.clues} pustych pól`;
-  head.append(h,sub);tile.append(head,renderBoard(board,solved));
+  const sub=document.createElement('span');const entered=board.entries?.filter(Boolean).length||0;
+  sub.textContent=!solved&&entered?`${board.clues} na start · wpisano ${entered}`:`${board.clues} cyfr · ${81-board.clues} pustych pól`;
+  const grid=renderBoard(board,solved);
+  if(onPlay&&!solved){
+    grid.tabIndex=0;grid.setAttribute('role','button');grid.setAttribute('aria-label',`Powiększ Sudoku ${index+1} i graj`);
+    grid.addEventListener('click',onPlay);
+    grid.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onPlay();}});
+  }
+  head.append(h,sub);tile.append(head,grid);
   const foot=document.createElement('div');foot.className='tile-foot';
   const t=document.createElement('span');t.textContent=LABELS[board.level];
   const cert=document.createElement('span');cert.className='certified';cert.textContent=solved?'Klucz odpowiedzi':'✓ Jedno rozwiązanie';
-  foot.append(t,cert);tile.append(foot);return tile;
+  foot.append(t,cert);tile.append(foot);
+  if(onPlay&&!solved){const button=document.createElement('button');button.type='button';button.className='play-button';button.textContent='Graj na ekranie ↗';button.setAttribute('aria-label',`Graj na ekranie — Sudoku ${index+1}`);button.addEventListener('click',onPlay);tile.append(button);}
+  return tile;
 }
 function init(){
-  let level='easy',boards=[],installationPrompt=null,busy=false;
-  const buttons=[...document.querySelectorAll('.level-btn')],status=document.getElementById('status'),solutionToggle=document.getElementById('solutions-toggle'),answerSheet=document.getElementById('answer-sheet');
+  let level='easy',boards=[],installationPrompt=null,busy=false,activeIndex=-1,selected=-1,checked=false,saveWarning=false,ownsFullscreen=false;
+  const histories=[[],[],[],[]];
+  const byId=id=>document.getElementById(id);
+  const buttons=[...document.querySelectorAll('.level-btn')],status=byId('status'),solutionToggle=byId('solutions-toggle'),answerSheet=byId('answer-sheet');
+  const player=byId('player'),playGrid=byId('play-board'),playStatus=byId('play-status'),numberPad=byId('number-pad');
+  function persist(){
+    try{localStorage.setItem(GAME_STORAGE_KEY,JSON.stringify({version:1,level,boards}));saveWarning=false;}
+    catch{saveWarning=true;status.textContent='Nie można zapisać postępów na tym urządzeniu. Przed zamknięciem wydrukuj zestaw z wpisami.';status.classList.add('error');}
+  }
   function display(){
-    const puzzles=document.getElementById('puzzle-boards'),answers=document.getElementById('answer-boards');puzzles.replaceChildren();answers.replaceChildren();
-    boards.forEach((board,i)=>{puzzles.append(renderTile(board,i));answers.append(renderTile(board,i,true));});
-    document.getElementById('sheet-level').textContent=LABELS[level];document.getElementById('answer-level').textContent=LABELS[level];
+    const puzzles=byId('puzzle-boards'),answers=byId('answer-boards');puzzles.replaceChildren();answers.replaceChildren();
+    boards.forEach((board,i)=>{puzzles.append(renderTile(board,i,false,()=>openPlayer(i)));answers.append(renderTile(board,i,true));});
+    byId('sheet-level').textContent=LABELS[level];byId('answer-level').textContent=LABELS[level];
+    buttons.forEach(btn=>{const active=btn.dataset.level===level;btn.classList.toggle('active',active);btn.setAttribute('aria-pressed',String(active));});
     answerSheet.hidden=!solutionToggle.checked;
-    document.getElementById('sheet-instruction').hidden=level!=='easy';
-    document.getElementById('easy-help').hidden=level!=='easy';
+    byId('sheet-instruction').hidden=level!=='easy';byId('easy-help').hidden=level!=='easy';
   }
-  function select(newLevel){
-    level=newLevel;buttons.forEach(btn=>{const active=btn.dataset.level===level;btn.classList.toggle('active',active);btn.setAttribute('aria-pressed',String(active));});
-    make();
+  function renderPlayer(message=''){
+    if(activeIndex<0)return;
+    const board=boards[activeIndex],conflicts=entryConflicts(board),result=checkPlayerBoard(board);
+    const mistakes=new Set(checked?result.errors:[]);
+    playGrid.replaceChildren();
+    for(let i=0;i<81;i++){
+      const cell=document.createElement('button'),row=Math.floor(i/9),col=i%9,value=board.puzzle[i]||board.entries[i];
+      cell.type='button';cell.className='sudoku-cell play-cell';cell.dataset.index=String(i);cell.tabIndex=i===selected?0:-1;
+      if(col===2||col===5)cell.classList.add('box-right');if(row===2||row===5)cell.classList.add('box-bottom');
+      if(board.puzzle[i])cell.classList.add('given');else if(value)cell.classList.add('user-digit');
+      if(i===selected)cell.classList.add('selected');
+      else if(Math.floor(selected/9)===row||selected%9===col)cell.classList.add('related');
+      if(conflicts.has(i))cell.classList.add('conflict');
+      if(mistakes.has(i))cell.classList.add('mistake');
+      if(value)cell.textContent=String(value);
+      cell.setAttribute('aria-pressed',String(i===selected));
+      cell.setAttribute('aria-label',`Wiersz ${row+1}, kolumna ${col+1}, ${value||'puste pole'}${board.puzzle[i]?', liczba startowa':''}`);
+      cell.addEventListener('click',()=>{selected=i;renderPlayer(board.puzzle[i]?'To liczba startowa. Wybierz puste pole.':'');focusSelected();});
+      playGrid.append(cell);
+    }
+    const fixed=selected<0||Boolean(board.puzzle[selected]);
+    numberPad.querySelectorAll('button').forEach(button=>{button.disabled=fixed;});
+    byId('erase-entry').disabled=fixed||!board.entries[selected];byId('undo-entry').disabled=!histories[activeIndex].length;
+    const filled=81-board.clues-result.empty.length;
+    const feedback=result.complete?'Gotowe! Sudoku rozwiązane prawidłowo.':message||`Wpisano ${filled} z ${81-board.clues} cyfr.${conflicts.size?' Powtórzone cyfry zaznaczono obramowaniem.':''}`;
+    playStatus.textContent=feedback+(saveWarning?' Nie udało się zapisać postępów. Przed zamknięciem wydrukuj zestaw.':'');
+    playStatus.classList.toggle('completed',result.complete);
   }
-  function make(){
-    if(busy)return;busy=true;const gen=document.getElementById('generate-btn');gen.disabled=true;status.classList.remove('error');status.textContent='Walidacja czterech plansz…';
-    // Odroczenie jednego zadania pozwala przeglądarce odświeżyć komunikat.
+  function focusSelected(){playGrid.querySelector(`[data-index="${selected}"]`)?.focus({preventScroll:true});}
+  function enter(value){
+    if(activeIndex<0||selected<0)return;
+    const board=boards[activeIndex],previous=board.entries[selected]||0;
+    if(!setPlayerEntry(board,selected,value))return;
+    histories[activeIndex].push({index:selected,value:previous});
+    if(histories[activeIndex].length>200)histories[activeIndex].shift();
+    checked=false;persist();renderPlayer();focusSelected();
+  }
+  function openPlayer(index){
+    activeIndex=index;const board=boards[index];selected=board.puzzle.findIndex((v,i)=>!v&&!board.entries[i]);
+    if(selected<0)selected=board.puzzle.findIndex(v=>!v);
+    checked=false;byId('player-title').textContent=`Sudoku ${String(index+1).padStart(2,'0')}`;byId('player-level').textContent=LABELS[board.level];
+    renderPlayer();player.showModal();document.body.classList.add('playing');focusSelected();
+  }
+  function closePlayer(){if(player.open)player.close();}
+  for(let value=1;value<=9;value++){
+    const button=document.createElement('button');button.type='button';button.className='number-key';button.textContent=String(value);button.setAttribute('aria-label',`Wpisz ${value}`);button.addEventListener('click',()=>enter(value));numberPad.append(button);
+  }
+  byId('close-player').addEventListener('click',closePlayer);
+  player.addEventListener('close',()=>{
+    const closed=activeIndex;activeIndex=-1;document.body.classList.remove('playing');display();
+    document.querySelectorAll('.play-button')[closed]?.focus({preventScroll:true});
+    if(ownsFullscreen&&document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+    ownsFullscreen=false;
+  });
+  byId('erase-entry').addEventListener('click',()=>enter(0));
+  byId('undo-entry').addEventListener('click',()=>{
+    const previous=histories[activeIndex]?.pop();if(!previous)return;
+    selected=previous.index;setPlayerEntry(boards[activeIndex],selected,previous.value);checked=false;persist();renderPlayer();focusSelected();
+  });
+  byId('check-entries').addEventListener('click',()=>{
+    checked=true;const result=checkPlayerBoard(boards[activeIndex]);
+    renderPlayer(result.errors.length?`Do poprawy: ${result.errors.length} wpisów. Zaznaczono je obramowaniem.`:`Dotychczasowe wpisy są poprawne. Pozostało pól: ${result.empty.length}.`);
+  });
+  const fullscreen=byId('fullscreen-player');
+  fullscreen.hidden=!(document.fullscreenEnabled&&document.documentElement.requestFullscreen);
+  fullscreen.addEventListener('click',async()=>{
+    try{if(!document.fullscreenElement){await document.documentElement.requestFullscreen();ownsFullscreen=true;}}
+    catch{renderPlayer('Plansza jest już powiększona. Ta przeglądarka nie udostępnia pełnego ekranu.');}
+  });
+  document.addEventListener('keydown',event=>{
+    if(!player.open||event.ctrlKey||event.metaKey||event.altKey)return;
+    if(/^[1-9]$/.test(event.key)){event.preventDefault();enter(Number(event.key));}
+    else if(['Backspace','Delete','0'].includes(event.key)){event.preventDefault();enter(0);}
+    else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){
+      event.preventDefault();const row=Math.floor(selected/9),col=selected%9;
+      if(event.key==='ArrowLeft'&&col>0)selected--;
+      if(event.key==='ArrowRight'&&col<8)selected++;
+      if(event.key==='ArrowUp'&&row>0)selected-=9;
+      if(event.key==='ArrowDown'&&row<8)selected+=9;
+      renderPlayer();focusSelected();
+    }
+  });
+  function make(requestedLevel=level,ask=true){
+    if(busy)return;
+    if(ask&&boards.some(board=>board.entries?.some(Boolean))&&!window.confirm('Nowy zestaw zastąpi obecne plansze i wpisane odpowiedzi. Wygenerować nowy zestaw?'))return;
+    busy=true;const gen=byId('generate-btn');gen.disabled=true;buttons.forEach(btn=>{btn.disabled=true;});status.classList.remove('error');status.textContent='Walidacja czterech plansz…';
     setTimeout(()=>{
       try{
-        const fresh=generateFour(level,boards);boards=fresh;display();
-        const clues=fresh.map(b=>b.clues).join(', ');
-        status.textContent=`Gotowe: 4 sudoku, każde z dokładnie jednym rozwiązaniem, sprawdzone logicznie. Wpisane cyfry: ${clues}.`;
+        boards=generateFour(requestedLevel,boards).map(board=>({...board,entries:Array(81).fill(0)}));level=requestedLevel;histories.forEach(history=>{history.length=0;});display();
+        status.textContent=`Gotowe: 4 sudoku, każde z dokładnie jednym rozwiązaniem, sprawdzone logicznie. Wpisane cyfry: ${boards.map(b=>b.clues).join(', ')}. Dotknij planszy, aby grać.`;persist();
       }catch(err){status.classList.add('error');status.textContent=err.message;}
-      finally{gen.disabled=false;busy=false;}
+      finally{gen.disabled=false;buttons.forEach(btn=>{btn.disabled=false;});busy=false;}
     },12);
   }
-  buttons.forEach(btn=>btn.addEventListener('click',()=>select(btn.dataset.level)));
-  document.getElementById('generate-btn').addEventListener('click',make);
-  document.getElementById('print-btn').addEventListener('click',()=>{if(!boards.length){status.textContent='Najpierw wygeneruj plansze.';return;}window.print();});
+  buttons.forEach(btn=>btn.addEventListener('click',()=>{if(btn.dataset.level!==level)make(btn.dataset.level);}));
+  byId('generate-btn').addEventListener('click',()=>make());
+  function printSet(){if(!boards.length){status.textContent='Najpierw wygeneruj plansze.';return;}closePlayer();display();window.print();}
+  byId('print-btn').addEventListener('click',printSet);byId('print-player').addEventListener('click',printSet);
+  window.addEventListener('beforeprint',display);
   solutionToggle.addEventListener('change',()=>{answerSheet.hidden=!solutionToggle.checked;});
-  window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installationPrompt=event;document.getElementById('install-btn').hidden=false;});
-  document.getElementById('install-btn').addEventListener('click',async()=>{
+  window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installationPrompt=event;byId('install-btn').hidden=false;});
+  byId('install-btn').addEventListener('click',async()=>{
     if(!installationPrompt)return;
-    installationPrompt.prompt();await installationPrompt.userChoice;installationPrompt=null;document.getElementById('install-btn').hidden=true;
+    installationPrompt.prompt();await installationPrompt.userChoice;installationPrompt=null;byId('install-btn').hidden=true;
   });
   if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  if(location.protocol==='file:')document.getElementById('offline-tag').textContent='Tryb lokalny';
-  make();
+  if(location.protocol==='file:')byId('offline-tag').textContent='Tryb lokalny';
+  let restored=null;try{restored=restoreGame(localStorage.getItem(GAME_STORAGE_KEY));}catch{}
+  if(restored){level=restored.level;boards=restored.boards;display();status.textContent='Przywrócono ostatni zestaw i Twoje wpisy. Dotknij planszy, aby kontynuować.';}
+  else make(level,false);
 }
 if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',init);
-if(typeof module!=='undefined'&&module.exports)module.exports={SEEDS,CLUE_RANGES,countSolutions,logicRating,transform,generateFour,solveByLastMissing};
-
+if(typeof module!=='undefined'&&module.exports)module.exports={SEEDS,CLUE_RANGES,countSolutions,logicRating,transform,generateFour,solveByLastMissing,setPlayerEntry,entryConflicts,checkPlayerBoard,restoreGame,renderBoard};
