@@ -49,6 +49,7 @@
         <label class="check-label"><input type="checkbox" id="solutions-toggle"><span>Dołącz rozwiązania</span></label>
       </div>
       <p class="status" id="status" role="status" aria-live="polite">Przygotowuję pierwsze cztery plansze…</p>
+      <p class="play-help">Dotknij jednej z czterech plansz, aby powiększyć ją i grać. Wybierz puste pole, a następnie cyfrę. Twoje wpisy zostaną na wydruku i zapiszą się na tym urządzeniu.</p>
     </section>
 
     <section class="preview-section" aria-labelledby="preview-title">
@@ -63,6 +64,32 @@
   </main>
   <footer class="app-footer">Sudoku 4×A4 · Bez reklam, konta i przesyłania danych.</footer>
 </div>
+  <dialog id="player" class="player" aria-labelledby="player-title" aria-describedby="player-instructions">
+    <div class="player-shell">
+      <header class="player-header">
+        <div><span class="eyebrow" id="player-level">ŁATWY</span><h2 id="player-title">Sudoku 01</h2></div>
+        <button type="button" class="secondary-btn" id="close-player">Wróć do 4 plansz</button>
+      </header>
+      <div class="player-body">
+        <div id="play-board" class="sudoku-grid play-grid" role="group" aria-label="Plansza do wypełniania"></div>
+        <div class="player-tools">
+          <p id="player-instructions">Dotknij pustego pola i wybierz cyfrę. Liczb startowych nie można zmieniać.</p>
+          <div id="number-pad" class="number-pad" role="group" aria-label="Wybierz cyfrę"></div>
+          <div class="play-actions">
+            <button type="button" class="secondary-btn" id="erase-entry">Usuń cyfrę</button>
+            <button type="button" class="secondary-btn" id="undo-entry">Cofnij</button>
+            <button type="button" class="secondary-btn" id="check-entries">Sprawdź</button>
+          </div>
+          <p id="play-status" class="play-status" role="status" aria-live="polite"></p>
+          <div class="player-bottom">
+            <button type="button" class="primary-btn" id="print-player">Drukuj zestaw z wpisami</button>
+            <button type="button" class="secondary-btn" id="fullscreen-player" hidden>Pełny ekran</button>
+          </div>
+          <p class="keyboard-help">Na komputerze: cyfry 1–9, strzałki, Delete / Backspace.</p>
+        </div>
+      </div>
+    </div>
+  </dialog>
 </body>
 </html>
 

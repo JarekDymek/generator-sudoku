@@ -24,6 +24,12 @@ Po pierwszym otwarciu aplikacja buforuje pliki na urządzeniu i może działać 
 
 Wybierz poziom, wygeneruj zestaw i naciśnij **Drukuj / Zapisz PDF**. Strona z odpowiedziami jest opcjonalna. W oknie drukowania wybierz A4, orientację pionową i skalę 100%.
 
+## Gra na urządzeniu
+
+Dotknij wybranej planszy lub przycisku **Graj na ekranie**. Plansza otworzy się w powiększonym widoku. Wybierz pole i cyfrę na klawiaturze ekranowej; na komputerze działają również cyfry, strzałki oraz Delete/Backspace. Liczby startowe są chronione. Dostępne są cofanie ruchu, usuwanie cyfry i sprawdzanie wpisów.
+
+**Wróć do 4 plansz** zachowuje odpowiedzi. **Drukuj zestaw z wpisami** drukuje cztery plansze razem z uzupełnionymi cyframi. Postępy zapisują się wyłącznie w przeglądarce na tym urządzeniu. Wygenerowanie nowego zestawu z wpisanymi odpowiedziami wymaga potwierdzenia. Widok gry wypełnia okno również bez obsługi systemowego pełnego ekranu, np. na iPadzie.
+
 ## Poziomy
 
 | Poziom | Wpisane liczby | Puste kratki |
