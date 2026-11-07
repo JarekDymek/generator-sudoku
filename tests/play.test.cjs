@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {generateFour,setPlayerEntry,entryConflicts,checkPlayerBoard,restoreGame}=require('../app.js');
+const {generateFour,setPlayerEntry,entryConflicts,checkPlayerBoard,restoreGame,revealHint}=require('../app.js');
 const fresh=()=>generateFour('easy').map(board=>({...board,entries:Array(81).fill(0)}));
 
 test('gra nie pozwala nadpisywać liczb startowych ani wpisywać nieprawidłowych wartości',()=>{
@@ -42,4 +42,29 @@ test('uszkodzony zapis i podmieniony klucz odpowiedzi nie są przywracane',()=>{
   const boards=fresh();boards[0].solution[0]=boards[0].solution[0]%9+1;
   assert.equal(restoreGame(JSON.stringify({version:1,level:'easy',boards})),null);
   assert.equal(restoreGame(JSON.stringify({version:1,level:'easy',boards:[]})),null);
+});
+
+test('hasło ujawnia dokładnie jedną prawidłową cyfrę bez nadpisywania innych pól',()=>{
+  const [board]=fresh(),original=board.puzzle.slice(),blank=board.puzzle.indexOf(0);
+  setPlayerEntry(board,blank,board.solution[blank]);
+  const before=board.entries.slice();
+  assert.equal(revealHint(board,'złe hasło').status,'denied');
+  assert.deepEqual(board.entries,before);
+  const result=revealHint(board,'  DUPA   BLADA  ');
+  assert.equal(result.status,'revealed');
+  assert.equal(board.puzzle[result.index],0);
+  assert.equal(before[result.index],0);
+  assert.equal(board.entries[result.index],board.solution[result.index]);
+  assert.equal(board.entries.filter((value,i)=>value!==before[i]).length,1);
+  assert.deepEqual(board.puzzle,original);
+});
+
+test('podpowiedź na pełnej planszy nie zmienia wpisów i nie wymyśla pustego pola',()=>{
+  const [board]=fresh();
+  for(let i=0;i<81;i++)if(!board.puzzle[i])setPlayerEntry(board,i,board.solution[i]);
+  assert.equal(revealHint(board,'dupa blada').status,'complete');
+  const blank=board.puzzle.indexOf(0);setPlayerEntry(board,blank,board.solution[blank]%9+1);
+  const before=board.entries.slice();
+  assert.equal(revealHint(board,'dupa blada').status,'full');
+  assert.deepEqual(board.entries,before);
 });

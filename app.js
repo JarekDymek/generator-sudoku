@@ -242,6 +242,14 @@ function checkPlayerBoard(board){
   }
   return {errors,empty,complete:!errors.length&&!empty.length};
 }
+function revealHint(board,phrase){
+  if(typeof phrase!=='string'||phrase.trim().toLocaleLowerCase('pl').replace(/\s+/g,' ')!=='dupa blada')return {status:'denied'};
+  const empty=board.puzzle.map((value,index)=>!value&&!board.entries?.[index]?index:-1).filter(index=>index>=0);
+  if(!empty.length)return {status:checkPlayerBoard(board).complete?'complete':'full'};
+  const index=empty[randomInt(empty.length)],value=board.solution[index];
+  setPlayerEntry(board,index,value);
+  return {status:'revealed',index,value};
+}
 function restoreGame(raw){
   try{
     if(typeof raw!=='string'||raw.length>20000)return null;
@@ -372,6 +380,15 @@ function init(){
     checked=true;const result=checkPlayerBoard(boards[activeIndex]);
     renderPlayer(result.errors.length?`Do poprawy: ${result.errors.length} wpisów. Zaznaczono je obramowaniem.`:`Dotychczasowe wpisy są poprawne. Pozostało pól: ${result.empty.length}.`);
   });
+  byId('hint-entry').addEventListener('click',()=>{
+    const phrase=window.prompt('Podaj hasło podpowiedzi:');
+    if(phrase===null)return;
+    const result=revealHint(boards[activeIndex],phrase);
+    if(result.status==='denied'){renderPlayer('Nieprawidłowe hasło.');return;}
+    if(result.status!=='revealed'){renderPlayer(result.status==='complete'?'Sudoku jest już rozwiązane.':'Nie ma pustych pól. Sprawdź wpisane cyfry.');return;}
+    selected=result.index;histories[activeIndex].push({index:selected,value:0});checked=false;persist();
+    renderPlayer(`Podpowiedź: wpisano ${result.value} — wiersz ${Math.floor(selected/9)+1}, kolumna ${selected%9+1}.`);focusSelected();
+  });
   const fullscreen=byId('fullscreen-player');
   fullscreen.hidden=!(document.fullscreenEnabled&&document.documentElement.requestFullscreen);
   fullscreen.addEventListener('click',async()=>{
@@ -421,4 +438,4 @@ function init(){
   else make(level,false);
 }
 if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',init);
-if(typeof module!=='undefined'&&module.exports)module.exports={SEEDS,CLUE_RANGES,countSolutions,logicRating,transform,generateFour,solveByLastMissing,setPlayerEntry,entryConflicts,checkPlayerBoard,restoreGame,renderBoard};
+if(typeof module!=='undefined'&&module.exports)module.exports={SEEDS,CLUE_RANGES,countSolutions,logicRating,transform,generateFour,solveByLastMissing,setPlayerEntry,entryConflicts,checkPlayerBoard,restoreGame,renderBoard,revealHint};

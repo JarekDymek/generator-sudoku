@@ -1,4 +1,4 @@
-const CACHE = 'sudoku-4xa4-v4-gra-dotykowa';
+const CACHE = 'sudoku-4xa4-v5-podpowiedz';
 const ASSETS = ['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-180.png'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(path=>new Request(path,{cache:'reload'})))).then(()=>self.skipWaiting()));
