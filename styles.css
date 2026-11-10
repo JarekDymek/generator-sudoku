@@ -21,3 +21,8 @@
 @media print{body.playing{overflow:visible!important}.player,.player::backdrop,.play-button,.play-help{display:none!important}.sudoku-grid[role=button]{outline:0!important}.sudoku-cell.user-digit{color:#333!important;font-weight:400!important}}
 @media screen{.play-actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media screen and (max-width:600px){.play-actions .secondary-btn{font-size:11px}}
+
+/* Nagłówek specjalnej edycji — responsywny na telefonach i komputerach. */
+.intro h1.trip-heading{font-size:clamp(26px,3.45vw,44px);line-height:1.16;letter-spacing:-.035em;text-wrap:balance;overflow-wrap:break-word}
+.intro h1.trip-heading .trip-owner{display:block;margin-top:14px;font-size:clamp(16px,2.1vw,27px);line-height:1.3;letter-spacing:-.02em;color:var(--accent)}
+@media(max-width:720px){.intro h1.trip-heading{font-size:clamp(21px,6vw,32px)}.intro h1.trip-heading .trip-owner{font-size:clamp(14px,3.6vw,20px);margin-top:12px}}
